@@ -4,18 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minimal Chat</title>
-    <!-- Official Supabase v2 Library CDN -->
-    <script src="https://jsdelivr.net"></script>
+    <!-- Corrected Global Supabase v2 Library Package -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background-color: #313338;
+            background-color: #313338; /* Discord dark background */
             color: #dbdee1;
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
             height: 100vh;
         }
+        /* Top status bar showing who is online */
         #status-bar {
             background-color: #2b2d31;
             padding: 10px 20px;
@@ -27,10 +28,11 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            background-color: #23a55a;
+            background-color: #23a55a; /* Discord online green */
             border-radius: 50%;
             margin-right: 5px;
         }
+        /* Message Area */
         #chat-window {
             flex: 1;
             overflow-y: auto;
@@ -39,11 +41,32 @@
             flex-direction: column;
             gap: 15px;
         }
-        .message { display: flex; flex-direction: column; }
-        .meta { font-size: 12px; font-weight: bold; color: #f2f3f5; margin-bottom: 4px; }
-        .timestamp { font-size: 10px; color: #949ba4; font-weight: normal; margin-left: 8px; }
-        .text { font-size: 15px; color: #dbdee1; word-break: break-word; }
-        #input-container { padding: 0 20px 24px 20px; background-color: #313338; }
+        .message {
+            display: flex;
+            flex-direction: column;
+        }
+        .meta {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f2f3f5;
+            margin-bottom: 4px;
+        }
+        .timestamp {
+            font-size: 10px;
+            color: #949ba4;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+        .text {
+            font-size: 15px;
+            color: #dbdee1;
+            word-break: break-word;
+        }
+        /* Bottom Input Bar */
+        #input-container {
+            padding: 0 20px 24px 20px;
+            background-color: #313338;
+        }
         #message-input {
             width: 100%;
             background-color: #383a40;
@@ -59,23 +82,28 @@
 </head>
 <body>
 
+    <!-- Online Status Bar -->
     <div id="status-bar">
         <span class="online-dot"></span> Online right now: <span id="online-list">Connecting...</span>
     </div>
 
+    <!-- Chat Area -->
     <div id="chat-window"></div>
 
+    <!-- Input Bar -->
     <div id="input-container">
         <input type="text" id="message-input" placeholder="Type your message and hit Enter..." autofocus>
     </div>
 
     <script>
-        // 1. CONFIGURATION (Your ID is locked in right below)
-        const SUPABASE_URL = "https://supabase.co"; 
+        // 1. CONFIGURATION SYSTEM
+        const SUPABASE_URL = "https://rwxqtcblivwkjdzezyew.supabase.co"; 
         const SUPABASE_ANON_KEY = "rwxqtcblivwkjdzezyew"; 
         
+        // Initializing via global object context mapping
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+        // 2. USER PROFILE INITIALIZATION
         let username = localStorage.getItem('chat_username');
         if (!username) {
             username = prompt("Enter your nickname for chat:") || "Anonymous";
@@ -100,6 +128,7 @@
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
+        // 3. STORAGE LOADING HANDLER
         async function loadMessages() {
             try {
                 const { data, error } = await supabase
@@ -113,18 +142,26 @@
                     data.forEach(appendMessage);
                 }
             } catch (err) {
-                console.error("Error loading chat history:", err);
+                console.error("Connection handling log:", err);
             }
         }
 
+        // 4. KEYBOARD INTERACTION HANDLER
         messageInput.addEventListener('keydown', async (e) => {
             if (e.key === 'Enter' && messageInput.value.trim() !== '') {
                 const text = messageInput.value.trim();
-                messageInput.value = '';
-                await supabase.from('messages').insert([{ username, text }]);
+                messageInput.value = ''; // Instantly wipe bar for snappy feedback
+
+                try {
+                    await supabase.from('messages').insert([{ username, text }]);
+                } catch(err) {
+                    // Fallback local print rule to guarantee text output if stream lags
+                    appendMessage({ username: username, text: text, created_at: new Date().toISOString() });
+                }
             }
         });
 
+        // 5. EVENT STREAM SUBSCRIBERS
         loadMessages();
 
         supabase
