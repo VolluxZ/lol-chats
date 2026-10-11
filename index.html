@@ -1,1 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Chat</title>
+    <!-- Corrected Global Supabase v2 Library CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #313338; /* Discord dark background */
+            color: #dbdee1;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        /* Top status bar showing who is online */
+        #status-bar {
+            background-color: #2b2d31;
+            padding: 10px 20px;
+            font-size: 14px;
+            border-bottom: 1px solid #1f2023;
+            color: #949ba4;
+        }
+        .online-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #23a55a; /* Discord online green */
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        /* Message Area */
+        #chat-window {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .message {
+            display: flex;
+            flex-direction: column;
+        }
+        .meta {
+            font-size: 12px;
+            font-weight: bold;
+            color: #f2f3f5;
+            margin-bottom: 4px;
+        }
+        .timestamp {
+            font-size: 10px;
+            color: #949ba4;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+        .text {
+            font-size: 15px;
+            color: #dbdee1;
+            word-break: break-word;
+        }
+        /* Bottom Input Bar */
+        #input-container {
+            padding: 0 20px 24px 20px;
+            background-color: #313338;
+        }
+        #message-input {
+            width: 100%;
+            background-color: #383a40;
+            border: none;
+            border-radius: 8px;
+            padding: 11px 16px;
+            color: #dbdee1;
+            font-size: 16px;
+            outline: none;
+        }
+        #message-input::placeholder { color: #6d737d; }
+    </style>
+</head>
+<body>
 
+    <!-- Online Status Bar -->
+    <div id="status-bar">
+        <span class="online-dot"></span> Online right now: <span id="online-list">Connecting...</span>
+    </div>
+
+    <!-- Chat Area -->
+    <div id="chat-window"></div>
+
+    <!-- Input Bar -->
+    <div id="input-container">
+        <input type="text" id="message-input" placeholder="Type your message and hit Enter..." autofocus>
+    </div>
+
+    <script>
+        // 1. CONFIGURATION (Replace these with your actual Supabase credentials)
+        const SUPABASE_URL = "rwxqtcblivwkjdzezyew";
+        const SUPABASE_ANON_KEY = "rwxqtcblivwkjdzezyew";
+        
+        // Initializing client using the global variable exposed by CDN script
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 2. USER SETTING (Ask for a nickname when opening the page)
+        let username = localStorage.getItem('chat_username');
+        if (!username) {
+            username = prompt("Enter your nickname for chat:") || "Anonymous";
+            localStorage.setItem('chat_username', username);
+        }
+
+        const chatWindow = document.getElementById('chat-window');
+        const messageInput = document.getElementById('message-input');
+        const onlineList = document.getElementById('online-list');
+
+        // Helper to format timestamps nicely
+        function formatTime(isoString) {
+            const date = isoString ? new Date(isoString) : new Date();
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        // Helper to render a message on screen
+        function appendMessage(msg) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            const timeStr = formatTime(msg.created_at);
+            msgDiv.innerHTML = `<div class="meta">${msg.username}<span class="timestamp">${timeStr}</span></div><div class="text">${msg.text}</div>`;
+            chatWindow.appendChild(msgDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight; // Auto-scroll to bottom
+        }
+
+        // 3. LOAD EXISTING OLD MESSAGES
+        async function loadMessages() {
+            const { data, error } = await supabase
+                .from('messages')
+                .select('*')
+                .order('id', { ascending: true })
+                .limit(100);
+            
+            if (data) data.forEach(appendMessage);
+        }
+
+        // 4. SEND MESSAGE ON ENTER
+        messageInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && messageInput.value.trim() !== '') {
+                const text = messageInput.value.trim();
+                messageInput.value = ''; // Clear immediately for snappy feel
+
+                // Insert into cloud database
+                await supabase.from('messages').insert([{ username, text }]);
+            }
+        });
+
+        // 5. REALTIME LISTENERS (Messages & Presence Status)
+        loadMessages();
+
+        // Listen for new incoming messages
+        supabase
+            .channel('public:messages')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                appendMessage(payload.new);
+            })
+            .subscribe();
+
+        // Track who is actively online right now
+        const presenceChannel = supabase.channel('online-users');
+
+        presenceChannel
+            .on('presence', { event: 'sync' }, () => {
+                const newState = presenceChannel.presenceState();
+                const users = [];
+                // Gather unique usernames from online clients
+                for (const id in newState) {
+                    newState[id].forEach(presence => {
+                        if (!users.includes(presence.user)) {
+                            users.push(presence.user);
+                        }
+                    });
+                }
+                onlineList.textContent = users.length > 0 ? users.join(', ') : "Nobody";
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    // Send this user's name to the online tracking group
+                    await presenceChannel.track({ user: username });
+                }
+            });
+    </script>
+</body>
+</html>
