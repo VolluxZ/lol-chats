@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minimal Chat</title>
+    <!-- Official Supabase v2 Library CDN Package -->
+    <script src="https://jsdelivr.net"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -89,7 +91,7 @@
 <body>
 
     <div id="status-bar">
-        <span class="online-dot"></span> Online: <span id="online-list">You</span>
+        <span class="online-dot"></span> Online right now: <span id="online-list">Connecting...</span>
     </div>
 
     <div id="chat-window"></div>
@@ -100,7 +102,13 @@
     </div>
 
     <script>
-        // Setup simple local nickname
+        // 1. FIXED CONFIGURATION (Your ID is baked right into the URL link!)
+        const SUPABASE_URL = "https://supabase.co"; 
+        const SUPABASE_ANON_KEY = "PASTE_YOUR_ACTUAL_LONG_ANON_KEY_HERE"; 
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // Setup user nickname
         let username = localStorage.getItem('chat_username');
         if (!username) {
             username = prompt("Enter your nickname:") || "Anonymous";
@@ -112,35 +120,79 @@
         const sendButton = document.getElementById('send-btn');
         const onlineList = document.getElementById('online-list');
 
-        onlineList.textContent = username;
-
-        // Core Send function
-        function sendMessage() {
-            const text = messageInput.value.trim();
-            if (text === '') return;
-
-            // Clear input box instantly
-            messageInput.value = '';
-
-            // Print directly onto screen layout
+        function appendMessage(msg) {
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message';
-            msgDiv.innerHTML = `<div class="meta">${username}</div><div class="text">${text}</div>`;
+            msgDiv.innerHTML = `<div class="meta">${msg.username}</div><div class="text">${msg.text}</div>`;
             chatWindow.appendChild(msgDiv);
-            
-            // Auto scroll down
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
-        // Action when button is clicked
-        sendButton.addEventListener('click', sendMessage);
-
-        // Action when Enter is tapped (as secondary fallback)
-        messageInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                sendMessage();
+        // Load existing old messages from the cloud database
+        async function loadMessages() {
+            try {
+                const { data } = await supabase
+                    .from('messages')
+                    .select('*')
+                    .order('id', { ascending: true })
+                    .limit(100);
+                
+                if (data) {
+                    chatWindow.innerHTML = ''; // Wipe out previous text states
+                    data.forEach(appendMessage);
+                }
+            } catch (err) {
+                console.error(err);
             }
+        }
+
+        // Send function to push data up to Supabase
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text === '') return;
+
+            messageInput.value = ''; // Clear box immediately
+
+            // Insert message to your cloud server table database
+            await supabase.from('messages').insert([{ username, text }]);
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
         });
+
+        // Load database history on start
+        loadMessages();
+
+        // Listen for new live incoming messages from your friend
+        supabase
+            .channel('public:messages')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+                appendMessage(payload.new);
+            })
+            .subscribe();
+
+        // Track who is actively online right now
+        const presenceChannel = supabase.channel('online-users');
+        presenceChannel
+            .on('presence', { event: 'sync' }, () => {
+                const newState = presenceChannel.presenceState();
+                const users =;
+                for (const id in newState) {
+                    newState[id].forEach(presence => {
+                        if (!users.includes(presence.user)) {
+                            users.push(presence.user);
+                        }
+                    });
+                }
+                onlineList.textContent = users.length > 0 ? users.join(', ') : "Nobody";
+            })
+            .subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await presenceChannel.track({ user: username });
+                }
+            });
     </script>
 </body>
 </html>
