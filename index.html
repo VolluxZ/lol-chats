@@ -4,19 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Minimal Chat</title>
-    <!-- Official Supabase v2 Library CDN -->
-    <script src="https://jsdelivr.net"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background-color: #313338; /* Discord dark background */
+            background-color: #313338; /* Discord background */
             color: #dbdee1;
             font-family: sans-serif;
             display: flex;
             flex-direction: column;
             height: 100vh;
         }
-        /* Top status bar showing who is online */
         #status-bar {
             background-color: #2b2d31;
             padding: 10px 20px;
@@ -28,11 +25,10 @@
             display: inline-block;
             width: 8px;
             height: 8px;
-            background-color: #23a55a; /* Discord online green */
+            background-color: #23a55a;
             border-radius: 50%;
             margin-right: 5px;
         }
-        /* Message Area */
         #chat-window {
             flex: 1;
             overflow-y: auto;
@@ -51,24 +47,20 @@
             color: #f2f3f5;
             margin-bottom: 4px;
         }
-        .timestamp {
-            font-size: 10px;
-            color: #949ba4;
-            font-weight: normal;
-            margin-left: 8px;
-        }
         .text {
             font-size: 15px;
             color: #dbdee1;
             word-break: break-word;
         }
-        /* Bottom Input Bar */
+        /* Bottom Input Bar Container */
         #input-container {
             padding: 0 20px 24px 20px;
             background-color: #313338;
+            display: flex;
+            gap: 10px;
         }
         #message-input {
-            width: 100%;
+            flex: 1;
             background-color: #383a40;
             border: none;
             border-radius: 8px;
@@ -77,135 +69,78 @@
             font-size: 16px;
             outline: none;
         }
-        #message-input::placeholder { color: #6d737d; }
+        /* Big Send Button */
+        #send-btn {
+            background-color: #5865f2; /* Discord Blurple color */
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0 24px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #send-btn:hover {
+            background-color: #4752c4;
+        }
     </style>
 </head>
 <body>
 
-    <!-- Online Status Bar -->
     <div id="status-bar">
-        <span class="online-dot"></span> Online right now: <span id="online-list">Connecting...</span>
+        <span class="online-dot"></span> Online: <span id="online-list">You</span>
     </div>
 
-    <!-- Chat Area -->
     <div id="chat-window"></div>
 
-    <!-- Input Bar -->
     <div id="input-container">
-        <input type="text" id="message-input" placeholder="Type your message and hit Enter..." autofocus>
+        <input type="text" id="message-input" placeholder="Type your message..." autofocus>
+        <button id="send-btn">SEND</button>
     </div>
 
     <script>
-        // 1. CONFIGURATION SYSTEM
-        const SUPABASE_URL = "https://supabase.co"; 
-        const SUPABASE_ANON_KEY = "rwxqtcblivwkjdzezyew"; 
-        
-        let supabase = null;
-        try {
-            // Initializing via global library constructor reference
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } catch(e) {
-            console.log("Database connection handshake bypassed.");
-        }
-
-        // 2. USER PROFILE INITIALIZATION
+        // Setup simple local nickname
         let username = localStorage.getItem('chat_username');
         if (!username) {
-            username = prompt("Enter your nickname for chat:") || "Anonymous";
+            username = prompt("Enter your nickname:") || "Anonymous";
             localStorage.setItem('chat_username', username);
         }
 
         const chatWindow = document.getElementById('chat-window');
         const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-btn');
         const onlineList = document.getElementById('online-list');
 
-        // Immediately show current user in the status bar locally
         onlineList.textContent = username;
 
-        function formatTime(isoString) {
-            const date = isoString ? new Date(isoString) : new Date();
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
+        // Core Send function
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text === '') return;
 
-        function appendMessage(msg) {
+            // Clear input box instantly
+            messageInput.value = '';
+
+            // Print directly onto screen layout
             const msgDiv = document.createElement('div');
             msgDiv.className = 'message';
-            const timeStr = formatTime(msg.created_at);
-            msgDiv.innerHTML = `<div class="meta">${msg.username}<span class="timestamp">${timeStr}</span></div><div class="text">${msg.text}</div>`;
+            msgDiv.innerHTML = `<div class="meta">${username}</div><div class="text">${text}</div>`;
             chatWindow.appendChild(msgDiv);
+            
+            // Auto scroll down
             chatWindow.scrollTop = chatWindow.scrollHeight;
         }
 
-        // 3. STORAGE LOADING HANDLER
-        async function loadMessages() {
-            if (!supabase) return;
-            try {
-                const { data, error } = await supabase
-                    .from('messages')
-                    .select('*')
-                    .order('id', { ascending: true })
-                    .limit(100);
-                
-                if (data) {
-                    chatWindow.innerHTML = '';
-                    data.forEach(appendMessage);
-                }
-            } catch (err) {
-                console.error("History engine stream delay:", err);
-            }
-        }
+        // Action when button is clicked
+        sendButton.addEventListener('click', sendMessage);
 
-        // 4. KEYBOARD INTERACTION HANDLER (Now with instant local printing bypass)
-        messageInput.addEventListener('keydown', async (e) => {
-            if (e.key === 'Enter' && messageInput.value.trim() !== '') {
-                const text = messageInput.value.trim();
-                messageInput.value = ''; // Instantly wipe bar for snappy feedback
-
-                // Force layout text display immediately on enter press
-                appendMessage({ username: username, text: text, created_at: new Date().toISOString() });
-
-                // Try pushing to database cloud backup asynchronously in background
-                if (supabase) {
-                    supabase.from('messages').insert([{ username, text }]).catch(err => {
-                        console.log("Database sync bypassed.");
-                    });
-                }
+        // Action when Enter is tapped (as secondary fallback)
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
         });
-
-        // 5. EVENT STREAM SUBSCRIBERS
-        loadMessages();
-
-        if (supabase) {
-            supabase
-                .channel('public:messages')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-                    if (payload.new.username !== username) {
-                        appendMessage(payload.new);
-                    }
-                })
-                .subscribe();
-
-            const presenceChannel = supabase.channel('online-users');
-            presenceChannel
-                .on('presence', { event: 'sync' }, () => {
-                    const newState = presenceChannel.presenceState();
-                    const users = [username]; // Keep current user persistent
-                    for (const id in newState) {
-                        newState[id].forEach(presence => {
-                            if (!users.includes(presence.user)) {
-                                users.push(presence.user);
-                            }
-                        });
-                    }
-                    onlineList.textContent = users.join(', ');
-                })
-                .subscribe(async (status) => {
-                    if (status === 'SUBSCRIBED') {
-                        await presenceChannel.track({ user: username });
-                    }
-                });
-        }
     </script>
 </body>
 </html>
